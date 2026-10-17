@@ -37,6 +37,11 @@ async function initializeTaskCount() {
   // Check whether "taskCount" exists in Redis.
   // If it does not, initialize it from the current number of tasks
   // stored in PostgreSQL.
+  const exists = await redisClient.exists("taskCount");
+  if (!exists) {
+    const result = await pool.query("SELECT COUNT(*) FROM tasks");
+    await redisClient.set("taskCount", result.rows[0].count);
+  }
 }
 
 // POST /tasks: Create a new task
@@ -47,6 +52,10 @@ app.post("/tasks", async (req, res) => {
   //   - If missing, respond with HTTP 400 and
   //     { error: "Title is required" }.
   // - If "description" or "status" is omitted, use "" as the default value.
+  const { title, description = "", status = "" } = req.body;
+  if (!title){
+    return res.status(400).json({ error: "Title is required" });
+  }
 
   try {
     // TODO:
@@ -55,6 +64,13 @@ app.post("/tasks", async (req, res) => {
     // - Store the new task in PostgreSQL.
     // - Update "taskCount" in Redis.
     // - Respond with the required status and JSON body.
+    await initializeTaskCount();
+    const result = await pool.query(
+      "INSERT INTO tasks (data) VALUES ($1) RETURNING id",
+      [JSON.stringify({ title, description, status })]
+    );
+    await redisClient.incr("taskCount");
+    res.status(201).json({ id: result.rows[0].id });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
@@ -67,6 +83,8 @@ app.get("/tasks", async (req, res) => {
     // TODO:
     // Retrieve all tasks from PostgreSQL and return them in the
     // response format specified in the assignment handout.
+    const result = await pool.query("SELECT id, data FROM tasks ORDER BY id");
+    res.status(200).json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });

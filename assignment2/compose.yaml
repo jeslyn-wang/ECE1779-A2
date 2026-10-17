@@ -11,9 +11,6 @@ services:
       - DB_NAME=${DB_NAME}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-    secrets:
-      - db_password
-      - db_user
     networks:
       - app-network
     depends_on:
@@ -29,9 +26,6 @@ services:
       POSTGRES_DB: ${DB_NAME}
     networks:
       - app-network
-    secrets:
-      - db_password
-      - db_user
     volumes:
       - db-data:/var/lib/postgresql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -41,19 +35,18 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-redis:
-  image: redis:8
-  networks:
-    - app-network
-  healthcheck:
-    test: ["CMD-SHELL", "redis-cli", "ping"]
-    interval: 5s
-    timeout: 3s
-    retries: 5
-    start_period: 10s
+  redis:
+    image: redis:8
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 networks:
   app-network:
     driver: bridge
 volumes:
   db-data:
-  
