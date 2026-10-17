@@ -1,6 +1,6 @@
-servives:
+services:
   api:
-    build:
+    build: .
     ports:
       - "3000:3000"
     environment:
@@ -9,9 +9,18 @@ servives:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     secrets:
       - db_password
       - db_user
+    networks:
+      - app-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
   db:
     image: postgres:18
     environment:
@@ -32,13 +41,19 @@ servives:
       timeout: 5s
       retries: 5
       start_period: 10s
-secrets:
-  db_password:
-    file: ./db_password.txt
-  db_user:
-    file: ./db_user.txt
+redis:
+  image: redis:8
+  networks:
+    - app-network
+  healthcheck:
+    test: ["CMD-SHELL", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
 networks:
   app-network:
     driver: bridge
 volumes:
   db-data:
+  
