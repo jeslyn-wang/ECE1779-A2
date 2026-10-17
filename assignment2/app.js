@@ -33,7 +33,6 @@ redisClient.on("error", (err) => {
 
 // Initialize taskCount in Redis if it is missing
 async function initializeTaskCount() {
-  // TODO:
   // Check whether "taskCount" exists in Redis.
   // If it does not, initialize it from the current number of tasks
   // stored in PostgreSQL.
@@ -47,7 +46,6 @@ async function initializeTaskCount() {
 // POST /tasks: Create a new task
 app.post("/tasks", async (req, res) => {
   // Input format: { title, description, status }
-  // TODO:
   // - Check that "title" is provided in the request body.
   //   - If missing, respond with HTTP 400 and
   //     { error: "Title is required" }.
@@ -58,7 +56,6 @@ app.post("/tasks", async (req, res) => {
   }
 
   try {
-    // TODO:
     // - Validate the required input.
     // - Ensure "taskCount" is initialized before updating it.
     // - Store the new task in PostgreSQL.
@@ -80,7 +77,6 @@ app.post("/tasks", async (req, res) => {
 // GET /tasks: Retrieve all tasks
 app.get("/tasks", async (req, res) => {
   try {
-    // TODO:
     // Retrieve all tasks from PostgreSQL and return them in the
     // response format specified in the assignment handout.
     const result = await pool.query("SELECT id, data FROM tasks ORDER BY id");
@@ -94,9 +90,18 @@ app.get("/tasks", async (req, res) => {
 // GET /tasks/:id: Retrieve a task by ID
 app.get("/tasks/:id", async (req, res) => {
   try {
-    // TODO:
     // Retrieve the requested task from PostgreSQL.
     // Return the task if it exists, or the required 404 response otherwise.
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const result = await pool.query("SELECT id, data FROM tasks WHERE id = $1", [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    res.status(200).json(result.rows[0]);
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
@@ -106,12 +111,30 @@ app.get("/tasks/:id", async (req, res) => {
 // PUT /tasks/:id: Update a task by ID (supports partial update)
 app.put("/tasks/:id", async (req, res) => {
   try {
-    // TODO:
     // Retrieve the existing task.
     // Update only the fields provided in the request body and preserve
     // the existing values of omitted fields.
     // Save and return the updated task.
     // Return the required 404 response if the task does not exist.
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    const { title, description, status } = req.body;
+    const updates = {};                                   // only include fields the client actually sent
+    if (title !== undefined) updates.title = title;
+    if (description !== undefined) updates.description = description;
+    if (status !== undefined) updates.status = status;
+
+
+    const result = await pool.query(
+      "UPDATE tasks SET data = data || $1::jsonb WHERE id = $2 RETURNING id, data",
+      [JSON.stringify(updates), id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    res.status(200).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
@@ -121,11 +144,21 @@ app.put("/tasks/:id", async (req, res) => {
 // DELETE /tasks/:id: Delete a task by ID
 app.delete("/tasks/:id", async (req, res) => {
   try {
-    // TODO:
     // - Ensure "taskCount" is initialized before updating it.
     // - Delete the task from PostgreSQL.
     // - If the task existed, update "taskCount" in Redis and return 204.
     // - Otherwise, return the required 404 response.
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    await initializeTaskCount();                          // before decrementing, same reasoning as POST
+    const result = await pool.query("DELETE FROM tasks WHERE id = $1 RETURNING id", [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Task not found" });
+    }
+    await redisClient.decr("taskCount");                  // only after a successful delete
+    res.status(204).send();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
@@ -135,9 +168,11 @@ app.delete("/tasks/:id", async (req, res) => {
 // GET /stats: Retrieve cached task count
 app.get("/stats", async (req, res) => {
   try {
-    // TODO:
     // Ensure "taskCount" is initialized, retrieve it from Redis,
     // and return it in the response format specified in the handout.
+    await initializeTaskCount();
+    const count = await redisClient.get("taskCount");
+    res.status(200).json({ taskCount: parseInt(count, 10) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
